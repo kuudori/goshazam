@@ -25,9 +25,9 @@ type RawSignatureHeader struct {
 
 func (ds *DecodedSignature) EncodeToBinary() ([]byte, error) {
 	header := RawSignatureHeader{
-		Magic1:     0xCAFE2580,
-		Magic2:     0x94119C00,
-		FixedValue: (15 << 19) + 0x40000,
+		Magic1:     magic1,
+		Magic2:     magic2,
+		FixedValue: fixedValue,
 	}
 
 	switch ds.SampleRateHz {

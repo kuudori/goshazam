@@ -56,10 +56,10 @@ func GetSignatureJSON(signature *DecodedSignature) (*Signature, error) {
 	}, nil
 }
 
-func RecognizeFromVoice(ctx context.Context, requestData interface{}) (interface{}, error) {
+func (c *ShazamClient) sendShazamRecognitionRequest(ctx context.Context, requestData interface{}) ([]byte, error) {
 	uuid1 := uuid.New().String()
 	uuid2 := uuid.New().String()
-	url := fmt.Sprintf("https://amp.shazam.com/discovery/v5/en-US/GB/iphone/-/tag/%s/%s", uuid1, uuid2)
+	url := fmt.Sprintf(DISCOVERY_URL, "en-US", "GB", "iphone", uuid1, uuid2)
 
 	jsonData, err := json.Marshal(requestData)
 	if err != nil {
@@ -71,21 +71,7 @@ func RecognizeFromVoice(ctx context.Context, requestData interface{}) (interface
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	var userAgents = []string{
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/85.0.4183.109 Mobile/15E148 Safari/604.1",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/29.0 Mobile/15E148 Safari/605.1.15",
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgents[rand.Intn(len(userAgents))])
-	req.Header.Set("Content-Language", "en_US")
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -95,16 +81,5 @@ func RecognizeFromVoice(ctx context.Context, requestData interface{}) (interface
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var result map[string]interface{}
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	return result, nil
+	return io.ReadAll(resp.Body)
 }

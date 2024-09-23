@@ -1,12 +1,20 @@
 package goshazam
 
 import (
-	"github.com/mjibson/go-dsp/fft"
-	"github.com/mjibson/go-dsp/window"
+	"gonum.org/v1/gonum/dsp/fourier"
 	"math"
+	"sync"
 )
 
-var hannWindow = window.Hann(fftSize)
+var hannWindow []float64
+
+func init() {
+	hannWindow = make([]float64, fftSize)
+	N := len(hannWindow)
+	for i := 0; i < N; i++ {
+		hannWindow[i] = 0.5 * (1 - math.Cos(2*math.Pi*float64(i)/float64(N-1)))
+	}
+}
 
 type FrequencyBand int
 
@@ -33,6 +41,7 @@ type SignatureGenerator struct {
 	spreadFFTOutputsIndex        int
 	numSpreadFFTsDone            uint32
 	signature                    DecodedSignature
+	mu                           sync.Mutex
 }
 
 func NewSignatureGenerator() *SignatureGenerator {
@@ -91,8 +100,8 @@ func (s *SignatureGenerator) doFFT(s16Mono16kHzBuffer []int16) {
 	for i := 0; i < fftSize; i++ {
 		s.reorderedRingBufferOfSamples[i] = float64(s.ringBufferOfSamples[(startIndex+i)%fftSize]) * hannWindow[i]
 	}
-
-	complexFFTResults := fft.FFTReal(s.reorderedRingBufferOfSamples)
+	fft := fourier.NewFFT(fftSize)
+	complexFFTResults := fft.Coefficients(nil, s.reorderedRingBufferOfSamples)
 	realFFTResults := s.fftOutputs[s.fftOutputsIndex]
 
 	for i := 0; i < fftOutputSize; i++ {
@@ -152,7 +161,9 @@ func (s *SignatureGenerator) doPeakRecognition() {
 	fftMinus49 := s.spreadFFTOutputs[(s.spreadFFTOutputsIndex-49+numFFTs)%numFFTs]
 
 	for binPosition := 10; binPosition <= 1014; binPosition++ {
-		if fftMinus46[binPosition] >= 1.0/64.0 && fftMinus46[binPosition] >= fftMinus49[binPosition-1] {
+		isMagnitudeAboveThreshold := fftMinus46[binPosition] >= minPeakMagnitude
+		isLocalMax := fftMinus46[binPosition] >= fftMinus49[binPosition-1]
+		if isMagnitudeAboveThreshold && isLocalMax {
 			var maxNeighborInFFTMinus49 float64
 			for _, offset := range []int{-10, -7, -4, -3, 1, 2, 5, 8} {
 				neighborIndex := binPosition + offset
@@ -172,10 +183,10 @@ func (s *SignatureGenerator) doPeakRecognition() {
 				}
 				if fftMinus46[binPosition] > maxNeighborInOtherAdjacentFFTs {
 					fftPassNumber := s.numSpreadFFTsDone - 46
-					peakMagnitude := math.Log(math.Max(1.0/64.0, fftMinus46[binPosition]))*1477.4 + 6144.0
+					peakMagnitude := math.Log(math.Max(minPeakMagnitude, fftMinus46[binPosition]))*1477.4 + 6144.0
 
-					peakMagnitudeBefore := math.Log(math.Max(1.0/64.0, fftMinus46[binPosition-1]))*1477.4 + 6144.0
-					peakMagnitudeAfter := math.Log(math.Max(1.0/64.0, fftMinus46[binPosition+1]))*1477.4 + 6144.0
+					peakMagnitudeBefore := math.Log(math.Max(minPeakMagnitude, fftMinus46[binPosition-1]))*1477.4 + 6144.0
+					peakMagnitudeAfter := math.Log(math.Max(minPeakMagnitude, fftMinus46[binPosition+1]))*1477.4 + 6144.0
 
 					peakVariation1 := peakMagnitude*2.0 - peakMagnitudeBefore - peakMagnitudeAfter
 					if peakVariation1 <= 0 {
